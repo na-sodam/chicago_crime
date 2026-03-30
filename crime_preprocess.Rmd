@@ -1,0 +1,88 @@
+```{r}
+# 1. 데이터 불러오기
+data <- read.csv("CH_crime.csv", stringsAsFactors = FALSE)
+
+# 2. 상위 100개 행 선택
+data_100 <- data[1:100, ]
+
+# 3. 새로운 CSV로 저장
+write.csv(data_100, "CH_crime_100rows.csv", row.names = FALSE)
+```
+```{r}
+library(sf)
+library(dplyr)
+
+# 1. 데이터 불러오기
+crime <- read.csv("CH_crime_100rows.csv", stringsAsFactors = FALSE)
+
+# 2. 결측 제거
+crime <- crime %>%
+  filter(!is.na(Latitude), !is.na(Longitude))
+
+# 3. sf point 객체로 변환
+crime_sf <- st_as_sf(crime, coords = c("Longitude", "Latitude"), crs = 4326)
+
+# 4. zipcode shapefile 불러오기
+zip_sf <- st_read("tl_2020_us_zcta520.shp")
+
+# 5. 좌표계 맞추기
+zip_sf <- st_transform(zip_sf, st_crs(crime_sf))
+
+# 6. spatial join
+crime_joined <- st_join(crime_sf, zip_sf, join = st_within)
+
+# 7. zipcode별 집계
+crime_by_zip <- crime_joined %>%
+  st_drop_geometry() %>%
+  group_by(ZCTA5CE20) %>%
+  summarise(crime_count = n()) %>%
+  arrange(desc(crime_count))
+
+print(crime_by_zip)
+```
+
+```{r}
+# 1. 데이터 불러오기
+data <- read.csv("CH_crime.csv", stringsAsFactors = FALSE)
+
+# 2. zipcode별 crime 건수 집계
+crime_count <- table(data$zipcode)
+
+# 3. 데이터프레임으로 변환
+crime_df <- as.data.frame(crime_count)
+
+# 4. 컬럼 이름 정리
+colnames(crime_df) <- c("zipcode", "crime_count")
+
+# 5. crime_count 기준 내림차순 정렬
+crime_df_sorted <- crime_df[order(-crime_df$crime_count), ]
+
+# 6. 결과 확인
+print(crime_df_sorted)
+```
+
+```{r}
+# 1. 데이터 불러오기
+data <- read.csv("CH_crime_zipcode.csv", stringsAsFactors = FALSE)
+
+# 2. crime_rate 계산
+data$crime_rate <- data$crime_count / sum(data$crime_count)
+
+# 3. 보기 좋게 10만 명당 crime rate도 계산
+#data$crime_rate_per_100000 <- (data$crime_count / data$population) * 100000
+
+# 4. crime_rate 기준 내림차순 정렬
+data_sorted <- data[order(-data$crime_rate), ]
+
+# 5. 상위 25% 기준값 구하기
+cutoff <- quantile(data_sorted$crime_rate, 0.75, na.rm = TRUE)
+
+# 6. 상위 25% zipcode 추출
+top_25_zipcodes <- data_sorted[data_sorted$crime_rate >= cutoff, ]
+
+# 7. 결과 확인
+print(top_25_zipcodes)
+
+# 8. 저장
+write.csv(top_25_zipcodes, "top_25_percent_zipcodes_by_crime_rate.csv", row.names = FALSE)
+```
